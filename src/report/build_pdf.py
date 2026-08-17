@@ -50,6 +50,10 @@ SUB = ParagraphStyle("Sub", parent=ss["Normal"], fontSize=12, textColor=colors.g
 FORMULA = ParagraphStyle("Formula", parent=ss["Normal"], fontName="Courier",
                          fontSize=9, leading=13, backColor=GREY, borderPadding=6,
                          spaceBefore=4, spaceAfter=8, alignment=TA_CENTER)
+CELL = ParagraphStyle("Cell", parent=ss["Normal"], fontSize=8.3, leading=11)
+CELLH = ParagraphStyle("CellH", parent=CELL, textColor=colors.white,
+                       fontName="Helvetica-Bold")
+CELLC = ParagraphStyle("CellC", parent=CELL, fontName="Courier", fontSize=8)
 
 
 def simple(text):
@@ -65,7 +69,7 @@ def para(text):
 
 
 def figure(name, caption, max_w=6.4):
-    path = os.path.join(FIG, name)
+    path = config.find_figure(name)
     if not os.path.exists(path):
         return Paragraph(f"[falta figura: {name}]", CAP)
     w, h = PILImage.open(path).size
@@ -181,6 +185,14 @@ def build(story):
         "arquetipo, y otro KMeans (4 tipos) agrupa las construcciones. Hallazgo: el "
         "tipo 'creador principal + jugadores de rol' concentra 4 de los últimos "
         "campeones — la construcción clásica de estrella rodeada de especialistas."))
+    story.append(para(
+        "El mapa siguiente muestra en qué estadística resalta cada uno de los 6 "
+        "arquetipos (rojo = por encima del resto, azul = por debajo): el creador tiene "
+        "el uso más alto; el protector de aro, rebote y tapones; el wing, volumen de "
+        "triple; y el jugador de rol, bajo en todo."))
+    story += figure("archetype_profiles_heatmap.png",
+                    "Perfil de los 6 arquetipos (z-score entre arquetipos). Rojo = la "
+                    "estadística en la que ese arquetipo destaca.")
     story += figure("roster_pca_labeled.png",
                     "Espacio de tipo de plantel. ★ = campeón.")
 
@@ -277,10 +289,12 @@ def build(story):
     story.append(detail(
         "Por equipo-temporada calculamos, con la historia del coach < T: huella de "
         "estilo (pace y lean ofensivo/defensivo típicos) y residual de rendimiento "
-        "(victorias reales menos las esperadas por talento), con shrinkage para "
-        "muestras chicas. El residual identifica bien a técnicos que suman (Mazzulla, "
-        "Daigneault, Atkinson). En el modelo combinado, sin embargo, su aporte marginal "
-        "resultó débil — es un candidato a reformular (ver sección 10)."))
+        "(victorias reales menos las esperadas por talento), con shrinkage. El residual "
+        "identifica bien a técnicos que suman (Mazzulla, Daigneault, Atkinson). Sin "
+        "embargo, al probarlo en el backtest, incluirlo en M1 EMPEORABA la predicción "
+        "(subía el error) — así que, por disciplina, el entrenador NO entra en el "
+        "modelo final. Es un ejemplo de una señal plausible que los datos no "
+        "respaldaron; queda como candidata a reformular en el futuro."))
 
     # ---------- 9. M1 ----------
     story.append(PageBreak())
@@ -291,16 +305,75 @@ def build(story):
         "viejas y predecimos la siguiente, sin hacer trampa. Le gana a simplemente "
         "asumir que un equipo repetirá sus victorias del año pasado."))
     story.append(detail(
-        "M1 es una regresión Ridge sobre 4 features: squad_strength_proj, continuity, "
-        "prior_wins (victorias de T-1) y coach_resid. Validación walk-forward: para "
-        "cada temporada de prueba se entrena con todas las anteriores y se predice esa. "
-        "Pesos aprendidos (estandarizados): prior_wins +4.2, continuity +3.8, "
-        "squad_strength_proj +3.7, coach_resid -0.65."))
+        "M1 es una regresión Ridge sobre 5 features: squad_strength_proj, continuity, "
+        "prior_net_rating (diferencial del año previo), best_pie_proj (la estrella) y "
+        "avg_age_core (edad del núcleo). Estas se eligieron por backtest y ablación: "
+        "cada una entra solo si baja el error. Validación walk-forward: para cada "
+        "temporada de prueba se entrena con todas las anteriores y se predice esa."))
+
+    story.append(Paragraph("Las 5 variables de M1, una por una", H2))
+    story.append(para(
+        "El 'peso' es cuánto empuja cada una la predicción (coeficiente estandarizado): "
+        "a mayor valor absoluto, más influye; el signo indica si suma o resta victorias."))
+
+    def C(t, st=CELL):
+        return Paragraph(t, st)
+
+    feats_tbl = [
+        [C("Variable", CELLH), C("Qué es (en simple)", CELLH),
+         C("Cómo se calcula (técnico)", CELLH), C("Peso", CELLH)],
+        [C("<b>continuity</b><br/>(continuidad)"),
+         C("Cuánto del equipo se mantiene respecto al año pasado. Los equipos que "
+           "conservan su núcleo rinden de forma más estable."),
+         C("Fracción de los minutos proyectados que aportan jugadores que ya estaban "
+           "en el equipo la temporada anterior (0 a 1)."),
+         C("+4.4", CELLC)],
+        [C("<b>prior_net_rating</b><br/>(diferencial previo)"),
+         C("El diferencial de puntos del año pasado. Predice mejor el futuro que el "
+           "récord de victorias (tiene menos ruido de suerte)."),
+         C("NET_RATING de la temporada T-1 del mismo equipo."),
+         C("+2.7", CELLC)],
+        [C("<b>avg_age_core</b><br/>(edad del núcleo)"),
+         C("La edad promedio de la rotación. Un núcleo más asentado tiende a ganar más; "
+           "los muy jóvenes aún están desarrollándose."),
+         C("Edad media de los 8 con más minutos proyectados, ponderada por minutos."),
+         C("+2.3", CELLC)],
+        [C("<b>squad_strength_proj</b><br/>(fuerza proyectada)"),
+         C("Qué tan bueno se espera que sea el equipo por el talento de sus jugadores, "
+           "estimado desde su historia — sin mirar el año en curso."),
+         C("PIE proyectado de cada jugador (edad + recencia + trayectoria) ponderado "
+           "por minutos, estandarizado por temporada."),
+         C("+2.1", CELLC)],
+        [C("<b>best_pie_proj</b><br/>(la estrella)"),
+         C("El nivel del mejor jugador. En la NBA el techo lo marca la superestrella, "
+           "que la fuerza promedio diluye entre 8-10 jugadores."),
+         C("PIE proyectado del jugador más impactante del plantel."),
+         C("+1.8", CELLC)],
+    ]
+    t = Table(feats_tbl, colWidths=[1.15 * inch, 2.05 * inch, 2.35 * inch, 0.55 * inch],
+              hAlign="LEFT")
+    t.setStyle(TableStyle([
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#CCCCCC")),
+        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F7F9FC")]),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 6))
+    story.append(para(
+        "Lectura: la continuidad y el diferencial previo pesan fuerte, y la fuerza del "
+        "plantel se reparte entre el promedio y la estrella. El entrenador se probó pero "
+        "se descartó porque empeoraba el backtest (ver sección 8)."))
+
     story.append(Paragraph("¿Qué es el MAE de victorias?", H2))
     story.append(simple(
         "El MAE (error absoluto medio) es cuántas victorias, en promedio, se equivoca "
-        "la predicción. Un MAE de 7.45 significa que, en promedio, el número predicho "
-        "se aleja del real unas 7 u 8 victorias — hacia arriba o hacia abajo. Cuanto "
+        "la predicción. Un MAE de 7.0 significa que, en promedio, el número predicho "
+        "se aleja del real unas 7 victorias — hacia arriba o hacia abajo. Cuanto "
         "más bajo, mejor. Ejemplo: si predecimos 48 victorias y el equipo gana 45, ese "
         "error es de 3."))
     story.append(detail(
@@ -308,16 +381,16 @@ def build(story):
         "equipos de prueba. Se prefiere al error cuadrático porque está en las mismas "
         "unidades (victorias) y es fácil de interpretar. Comparamos el MAE del modelo "
         "contra dos referencias: asumir que el equipo repetirá sus victorias del año "
-        "pasado (8.89) y asumir la media de la liga (~10.7). M1 logra 7.45, mejor que "
+        "pasado (8.89) y asumir la media de la liga (~10.7). M1 logra 7.02, mejor que "
         "ambas en todas las temporadas."))
     story.append(table([
         ["Temporada", "MAE M1", "MAE 'año pasado'", "Correlación M1"],
-        ["2021-22", "7.92", "8.33", "0.622"],
-        ["2022-23", "5.91", "8.07", "0.697"],
-        ["2023-24", "7.25", "8.47", "0.770"],
-        ["2024-25", "7.79", "9.13", "0.673"],
-        ["2025-26", "8.38", "10.43", "0.671"],
-        ["GLOBAL", "7.45", "8.89", "0.662"],
+        ["2021-22", "7.99", "8.33", "0.549"],
+        ["2022-23", "5.77", "8.07", "0.738"],
+        ["2023-24", "6.21", "8.47", "0.819"],
+        ["2024-25", "7.20", "9.13", "0.728"],
+        ["2025-26", "7.93", "10.43", "0.682"],
+        ["GLOBAL", "7.02", "8.89", "0.693"],
     ], col_widths=[1.5 * inch, 1.2 * inch, 1.9 * inch, 1.6 * inch]))
     story.append(Spacer(1, 8))
     story += figure("m1_pred_vs_real.png",
@@ -334,9 +407,9 @@ def build(story):
         "entrenador. Lo único del año en curso que usa es quién está en cada equipo "
         "(el roster), que es información que sí se conoce antes de empezar."))
     story.append(detail(
-        "Sin fuga de rendimiento: squad_strength_proj se construye con PIE proyectado "
-        "de temporadas < T; prior_wins es de T-1; coach_resid es de la historia previa "
-        "del técnico. Matices honestos: (a) el roster de T se tomó de datos reales, así "
+        "Sin fuga de rendimiento: squad_strength_proj y best_pie_proj se construyen con "
+        "PIE proyectado de temporadas < T; prior_net_rating es de T-1; avg_age_core es "
+        "conocido antes de empezar. Matices honestos: (a) el roster de T se tomó de datos reales, así "
         "que incluye traspasos de media temporada — para el backtest es una suposición "
         "razonable, y para la predicción viva de 2026-27 se resuelve dando el roster "
         "conocido antes de empezar; (b) los minutos de novatos usan un placeholder — es "
@@ -369,15 +442,16 @@ def build(story):
     story.append(Paragraph("12. Cómo se actualiza y qué sigue", H1))
     story.append(simple(
         "Cada año se bajan los datos nuevos, se corre un comando, y todo se recalcula "
-        "solo — incluidas las gráficas. Lo que falta por construir: convertir las "
-        "victorias predichas en posiciones de tabla, playoffs y campeón."))
+        "solo — incluidas las gráficas. La cascada completa (victorias, seeding, "
+        "playoffs y campeón) ya está construida."))
     story.append(detail(
         "Actualización anual: descargar la temporada nueva (download_teams/players/"
-        "lineups/coaches), correr run_all.py, y añadir el campeón en champions.py. "
-        "Próximos pasos del roadmap: mejorar la proyección de minutos, reformular o "
-        "quitar el efecto entrenador, y construir la cascada M2 (seeding), M3 "
-        "(simulación de playoffs) y M4 (probabilidad de campeón). Métrica actual de "
-        "referencia: MAE 7.45 victorias, mejor que la persistencia (8.89)."))
+        "lineups/coaches), correr run_all.py, y añadir el campeón en champions.py. La "
+        "cascada M1-M4 está lista y validada. Próximos pasos del roadmap: predicción "
+        "partido a partido con el calendario, mejor proyección de minutos, y "
+        "actualización en vivo (Elo) para capturar lesiones y forma durante el año. "
+        "Métrica actual: MAE 7.02 victorias, mejor que la persistencia (8.89); acierto "
+        "por partido ~63%."))
     story.append(Spacer(1, 12))
     story.append(Paragraph("Archivos clave: run_all.py (pipeline), PLAN.md y "
                           "PREDICTOR_DESIGN.md (diseño), outputs/ (tablas y figuras).",

@@ -30,9 +30,20 @@ STEPS = [
     ("Fuerza proyectada del equipo (Fase B)", "src.features.team_projection"),
     ("Features de entrenador", "src.features.coach_features"),
     ("M1 wins + backtest (Fase C)", "src.models.m1_wins"),
+    ("M2 seeding por conferencia", "src.models.m2_seeding"),
+    ("M1 sobre el calendario (si hay game logs)", "src.models.m1_schedule"),
+    ("M3 simulacion de playoffs", "src.models.m3_playoffs"),
+    ("M4 probabilidad de campeon", "src.models.m4_champion"),
     ("Graficas de exploracion", "src.viz.plots"),
     ("Graficas de fuerza y proximidad", "src.viz.analysis_plots"),
+    ("Perfil de arquetipos", "src.viz.archetype_profiles"),
+    ("Fuerza vs net rating", "src.viz.strength_vs_netrating"),
+    ("Fuerza proyectada vs net rating", "src.viz.strength_proj_vs_netrating"),
+    ("Revision de prediccion M1", "src.viz.prediction_review"),
+    ("Contendientes: proyectado vs real", "src.viz.contention_compare"),
     ("Documento PDF", "src.report.build_pdf"),
+    ("Resumen tecnico de modelos", "src.report.build_models_pdf"),
+    ("Organizar outputs por categoria", "src.report.organize_outputs"),
 ]
 
 

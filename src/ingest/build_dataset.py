@@ -54,8 +54,8 @@ def _require(path: str, hint: str) -> None:
 def load_style() -> pd.DataFrame:
     _require(
         config.STYLE_CLUSTERS,
-        "Corre en nba_clustering_comp: los 5 comandos del README "
-        "(hasta `python -m src.models.all_teams_clustering`).",
+        "Falta el clustering de estilo. Corre `python -m src.features.clean_teams` "
+        "y luego `python -m src.models.style_clustering` (o simplemente run_all.py).",
     )
     df = pd.read_csv(config.STYLE_CLUSTERS)
     # Prefijo a las 8 features de estilo escaladas para evitar colisiones.
@@ -73,7 +73,8 @@ def load_style() -> pd.DataFrame:
 def load_stats() -> pd.DataFrame:
     _require(
         config.TEAM_STATS_CLEAN,
-        "Corre `python -m src.features.combine_all_years` en nba_clustering_comp.",
+        "Falta team_clean.csv. Corre `python -m src.features.clean_teams` "
+        "(o simplemente run_all.py).",
     )
     df = pd.read_csv(config.TEAM_STATS_CLEAN)
     # Stats sin escalar + labels de victorias. Renombra a minusculas claras.
@@ -89,11 +90,14 @@ def load_stats() -> pd.DataFrame:
     return df[[c for c in keep if c in df.columns]].copy()
 
 
-def load_tanking() -> pd.DataFrame:
-    _require(
-        config.TANKING_CLASSIFICATION,
-        "Corre `python run_all.py` en nba_tanking (genera part2_classification.csv).",
-    )
+def load_tanking():
+    # OPCIONAL y DEPRECADO: el true_strength de nba_tanking no correlaciona con
+    # victorias (ver EDA); lo reemplaza squad_strength. Si el repo externo no esta
+    # presente, el pipeline sigue sin problema.
+    if not os.path.exists(config.TANKING_CLASSIFICATION):
+        print("[build] (info) nba_tanking no disponible: se omite true_strength "
+              "(ya reemplazado por squad_strength).")
+        return None
     df = pd.read_csv(config.TANKING_CLASSIFICATION)
     ren = {
         "season": "SEASON", "team_name": "TEAM_NAME_TANK",
@@ -115,15 +119,16 @@ def build() -> pd.DataFrame:
     tank = load_tanking()
 
     # 1) estilo + stats por (SEASON, TEAM_ID)
-    base = style.merge(stats, on=["SEASON", "TEAM_ID"], how="left",
-                       validate="one_to_one")
+    merged = style.merge(stats, on=["SEASON", "TEAM_ID"], how="left",
+                         validate="one_to_one")
 
-    # 2) + tanking por (SEASON, nombre normalizado)
-    base["_key_name"] = base["TEAM_NAME"].map(norm_team)
-    merged = base.merge(
-        tank.drop(columns=["TEAM_NAME_TANK"]),
-        on=["SEASON", "_key_name"], how="left", validate="one_to_one",
-    )
+    # 2) + tanking (OPCIONAL) por (SEASON, nombre normalizado)
+    if tank is not None:
+        merged["_key_name"] = merged["TEAM_NAME"].map(norm_team)
+        merged = merged.merge(
+            tank.drop(columns=["TEAM_NAME_TANK"]),
+            on=["SEASON", "_key_name"], how="left", validate="one_to_one",
+        ).drop(columns=["_key_name"])
 
     # --- Diagnostico de cruce -------------------------------------------------
     n = len(merged)
@@ -132,13 +137,8 @@ def build() -> pd.DataFrame:
     print(f"[build] filas totales: {n}")
     print(f"[build] temporadas:    {sorted(merged['SEASON'].unique())}")
     print(f"[build] sin wins (stats):        {miss_stats}")
-    print(f"[build] sin true_strength (tank): {miss_tank}")
-    if miss_tank:
-        faltan = merged.loc[merged["true_strength"].isna(), ["SEASON", "TEAM_NAME"]]
-        print("[build] equipos sin cruce de tanking (revisar alias):")
-        print(faltan.to_string(index=False))
-
-    merged = merged.drop(columns=["_key_name"])
+    if "true_strength" in merged.columns:
+        print(f"[build] sin true_strength (tank): {miss_tank}")
 
     # 3) + fuerza del plantel (squad_strength) por (SEASON, TEAM_ID)
     ss_path = os.path.join(config.PROCESSED_DIR, "players", "combined",

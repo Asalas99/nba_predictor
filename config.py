@@ -57,3 +57,39 @@ SEASONS_FULL = [
 
 for _d in (DATA_DIR, RAW_DIR, PROCESSED_DIR, OUTPUTS_DIR, FIGURES_DIR, TABLES_DIR):
     os.makedirs(_d, exist_ok=True)
+
+
+# --- Organizacion de outputs por categoria -----------------------------------
+def categorize(name: str) -> str:
+    """Carpeta a la que pertenece una figura/tabla segun su nombre."""
+    n = name.lower()
+    if n.startswith(("m1_", "m2_", "m3_", "m4_", "prediction_review")):
+        return "predicciones"
+    if "netrating" in n or n.startswith("eda_"):
+        return "correlacion"
+    if n.startswith(("style_", "roster_", "archetype_", "champions_style")):
+        return "clustering"
+    if n.startswith(("strength_heatmap", "strength_ranking", "contention_",
+                     "champion_proximity")):
+        return "fuerza"
+    return "otros"
+
+
+def _find(base_dir: str, filename: str) -> str:
+    """Devuelve la ruta del archivo este plano o dentro de una subcarpeta.
+    Prioriza la version plana (recien escrita durante run_all)."""
+    flat = os.path.join(base_dir, filename)
+    if os.path.exists(flat):
+        return flat
+    for root, _dirs, files in os.walk(base_dir):
+        if filename in files:
+            return os.path.join(root, filename)
+    return flat  # por defecto (aunque no exista aun)
+
+
+def find_table(filename: str) -> str:
+    return _find(TABLES_DIR, filename)
+
+
+def find_figure(filename: str) -> str:
+    return _find(FIGURES_DIR, filename)

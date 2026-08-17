@@ -1,0 +1,17 @@
+# entornos y cache
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.DS_Store
+
+# DATOS: se regeneran con los descargadores (nba_api). NO se suben al repo.
+data/
+
+# SALIDAS regenerables (figuras y tablas): se rehacen con run_all.py. NO se suben.
+outputs/figures/
+outputs/tables/
+outputs/_*/
+
+# Se CONSERVAN en el repo:  outputs/*.pdf  (documentacion, son deliverables)

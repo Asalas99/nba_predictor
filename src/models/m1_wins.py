@@ -32,7 +32,13 @@ from sklearn.preprocessing import StandardScaler
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import config  # noqa: E402
 
-FEATURES = ["squad_strength_proj", "continuity", "prior_wins", "coach_resid"]
+# Features de M1. Elegidas por backtest + ablacion (m1_experiments):
+#  - prior_net_rating (diferencial previo) predice mejor que prior_wins.
+#  - best_pie_proj (estrella): el techo lo marca el mejor jugador -> MAE 7.36->7.10.
+#  - avg_age_core (edad del nucleo) -> MAE 7.10->7.02.
+#  - coach_resid se descarto: metia ruido.
+FEATURES = ["squad_strength_proj", "continuity", "prior_net_rating",
+            "best_pie_proj", "avg_age_core"]
 
 
 def year(season: str) -> int:
@@ -51,15 +57,27 @@ def assemble() -> pd.DataFrame:
     tm = pd.read_csv(os.path.join(P, "teams", "combined", "team_clean.csv"))
 
     wins = tm[["SEASON", "TEAM_ID", "W"]].rename(columns={"W": "wins"})
-    # prior_wins = wins de T-1 del mismo equipo
-    pw = wins.copy()
-    pw["SEASON"] = pw["SEASON"].map(lambda s: f"{year(s)+1}-{str(year(s)+2)[2:]}")
-    pw = pw.rename(columns={"wins": "prior_wins"})
+
+    def shift_next(frame, col):
+        f = frame.copy()
+        f["SEASON"] = f["SEASON"].map(lambda s: f"{year(s)+1}-{str(year(s)+2)[2:]}")
+        return f.rename(columns={col: f"prior_{col}"})
+
+    # prior_wins (baseline) y prior_net_rating (feature de M1), ambos de T-1
+    pw = shift_next(wins.rename(columns={"wins": "wins"}), "wins")
+    pnr = shift_next(tm[["SEASON", "TEAM_ID", "NET_RATING"]], "NET_RATING") \
+        .rename(columns={"prior_NET_RATING": "prior_net_rating"})
+
+    # avg_age_core (edad del nucleo) desde squad_strength
+    age = pd.read_csv(os.path.join(P, "players", "combined", "squad_strength.csv"))[
+        ["SEASON", "TEAM_ID", "avg_age_core"]]
 
     df = (proj.merge(coach[["SEASON", "TEAM_ID", "coach_resid", "is_new_coach"]],
                      on=["SEASON", "TEAM_ID"], how="left")
+              .merge(age, on=["SEASON", "TEAM_ID"], how="left")
               .merge(wins, on=["SEASON", "TEAM_ID"], how="left")
-              .merge(pw, on=["SEASON", "TEAM_ID"], how="left"))
+              .merge(pw, on=["SEASON", "TEAM_ID"], how="left")
+              .merge(pnr, on=["SEASON", "TEAM_ID"], how="left"))
     df["yr"] = df["SEASON"].map(year)
     return df.dropna(subset=FEATURES + ["wins"]).reset_index(drop=True)
 

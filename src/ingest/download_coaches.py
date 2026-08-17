@@ -44,8 +44,14 @@ def download(start_year: int, end_year: int) -> None:
     out_dir = os.path.join(config.RAW_DIR, "coaches")
     os.makedirs(out_dir, exist_ok=True)
     dst = os.path.join(out_dir, "coaches.csv")
-    pd.DataFrame(rows).to_csv(dst, index=False)
-    print(f"LISTO: {len(rows)} entrenadores-temporada -> {dst}")
+    new = pd.DataFrame(rows)
+    # MERGE: no borra temporadas ya guardadas; reemplaza solo las re-descargadas
+    if os.path.exists(dst) and not new.empty:
+        old = pd.read_csv(dst)
+        old = old[~old["SEASON"].isin(new["SEASON"].unique())]
+        new = pd.concat([old, new], ignore_index=True)
+    new.to_csv(dst, index=False)
+    print(f"LISTO: coaches.csv actualizado ({len(rows)} nuevos, {len(new)} en total) -> {dst}")
 
 
 if __name__ == "__main__":

@@ -32,6 +32,12 @@ RECENCY_W = [0.5, 0.3, 0.2]   # pesos ultimas 3 temporadas (mas reciente primero
 SHRINK_K = 40                  # fuerza de regresion a la media (en "partidos")
 CAP_MIN = 38.0
 
+# --- Termino de trayectoria (para jovenes en ascenso, tipo Wembanyama) ---
+TRAJ_CAP = 0.035   # tope al cambio ano-a-ano que se extrapola (evita ruido)
+TRAJ_AGE = 25      # edad hasta la que aplica el empujon de trayectoria
+TRAJ_SPAN = 8.0    # que tan rapido baja el peso con la edad
+TRAJ_MAXW = 0.6    # peso maximo que puede tener la trayectoria (los mas jovenes)
+
 
 def year_of(season: str) -> int:
     return int(str(season)[:4])
@@ -104,24 +110,31 @@ def project_for_season(target: str, hist_all: pd.DataFrame, actual: pd.DataFrame
             rows.append(dict(
                 SEASON=target, PLAYER_ID=pid, TEAM_ID=r["TEAM_ID"], AGE=age_T,
                 n_prior=0, is_rookie=1,
-                pie_proj_data=prior, pie_proj_std=prior,
+                pie_proj_data=prior, pie_proj_std=prior, pie_proj_traj=prior,
                 min_proj=float(min(r.get("MIN", 15.0), CAP_MIN)),  # placeholder
                 pie_actual=r["PIE"], min_actual=r.get("MIN", np.nan)))
             continue
         base_pie, base_min = recency_baseline(past, prior)
-        last_row = past.sort_values("yr").iloc[-1]
+        past_sorted = past.sort_values("yr")
+        last_row = past_sorted.iloc[-1]
         last_age = int(last_row["AGE"])
         pie_last = float(last_row["PIE"])  # baseline naive (ultimo anio, sin edad)
         tgt_age = int(age_T) if not np.isnan(age_T) else last_age + (ty - past["yr"].max())
         # curva data (aditiva) y std (multiplicativa)
         pie_data = base_pie + data_age_delta(curve, last_age, tgt_age)
         pie_std = base_pie * std_age_mult(tgt_age) / max(std_age_mult(last_age), 1e-6)
+        # trayectoria: si un jugador JOVEN viene subiendo, proyecta que sigue subiendo.
+        pies = past_sorted["PIE"].values
+        yoy = float(np.clip(pies[-1] - pies[-2], -TRAJ_CAP, TRAJ_CAP)) if len(pies) >= 2 else 0.0
+        traj_extrap = pie_last + yoy
+        alpha = float(np.clip((TRAJ_AGE - tgt_age) / TRAJ_SPAN, 0.0, TRAJ_MAXW))
+        pie_traj = alpha * traj_extrap + (1 - alpha) * pie_std
         min_proj = float(np.clip(base_min * (0.97 if tgt_age > 30 else 1.0), 0, CAP_MIN))
         rows.append(dict(
             SEASON=target, PLAYER_ID=pid, TEAM_ID=r["TEAM_ID"], AGE=age_T,
             n_prior=len(past), is_rookie=0, pie_last=round(pie_last, 4),
             pie_proj_data=round(pie_data, 4), pie_proj_std=round(pie_std, 4),
-            min_proj=round(min_proj, 1),
+            pie_proj_traj=round(pie_traj, 4), min_proj=round(min_proj, 1),
             pie_actual=r["PIE"], min_actual=r.get("MIN", np.nan)))
     return pd.DataFrame(rows)
 
@@ -139,8 +152,16 @@ def validate(proj: pd.DataFrame) -> None:
     print(f"VALIDACION proyeccion de PIE ({len(v)} jugador-temporadas con historia)")
     print("=" * 60)
     print(f"  {'pie_last (naive)':18s}  MAE={mae('pie_last'):.4f}   corr={corr('pie_last'):.3f}")
-    for col in ["pie_proj_data", "pie_proj_std"]:
-        print(f"  {col:18s}  MAE={mae(col):.4f}   corr={corr(col):.3f}")
+    for col in ["pie_proj_data", "pie_proj_std", "pie_proj_traj"]:
+        if col in v.columns:
+            print(f"  {col:18s}  MAE={mae(col):.4f}   corr={corr(col):.3f}")
+    # subgrupo jovenes (donde deberia notarse la trayectoria)
+    yng = v[v["AGE"] <= 23]
+    if len(yng) and "pie_proj_traj" in v.columns:
+        def m(col, d):
+            return (d["pie_actual"] - d[col]).abs().mean()
+        print(f"  -- jovenes <=23 (n={len(yng)}): "
+              f"std MAE={m('pie_proj_std', yng):.4f}  traj MAE={m('pie_proj_traj', yng):.4f}")
 
 
 def main() -> None:

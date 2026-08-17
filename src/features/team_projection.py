@@ -22,7 +22,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import config  # noqa: E402
 
-PIE_COL = "pie_proj_std"  # la curva que mejor valido en Fase A
+PIE_COL = "pie_proj_traj"  # incluye trayectoria de jovenes en ascenso (mejor en <=23)
 
 
 def prev_season(season: str) -> str:
