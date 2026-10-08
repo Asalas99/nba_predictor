@@ -64,7 +64,7 @@ def calculate_metrics(y_true, y_pred):
 
 
 def compare_models(df):
-    """Backtesting walk-forward para ambos modelos."""
+    """Backtesting walk-forward para los tres modelos."""
 
     seasons = sorted(df["SEASON"].unique(), key=year)
 
@@ -97,18 +97,33 @@ def compare_models(df):
         )
         ridge_pred = np.clip(ridge_pred, 0, 82)
 
-        # MODELO 2: RANDOM FOREST
+        # MODELO 2: RANDOM FOREST BASE
         forest = create_model()
         forest.fit(X_train, y_train)
 
-        forest_pred = forest.predict(X_test)
-        forest_pred = np.clip(forest_pred, 0, 82)
+        forest_pred = np.clip(
+            forest.predict(X_test), 0, 82
+        )
+
+        # MODELO 3: RANDOM FOREST OPTIMIZADO
+        # Solo utiliza temporadas anteriores a la prueba
+        best_params = optimize_hyperparameters(train)
+
+        optimized_forest = create_model(best_params)
+        optimized_forest.fit(X_train, y_train)
+
+        optimized_pred = np.clip(
+            optimized_forest.predict(X_test), 0, 82
+        )
+
 
         # Metricas por temporada
         for model_name, predictions in [
             ("Ridge", ridge_pred),
             ("Random Forest", forest_pred),
+            ("Random Forest Optimizado", optimized_pred),
         ]:
+
             metrics_rows.append({
                 "season": season,
                 "model": model_name,
@@ -117,11 +132,13 @@ def compare_models(df):
             })
 
         # Predicciones individuales
-        for team_id, actual, ridge_wins, forest_wins in zip(
+        
+        for team_id, actual, ridge_wins, forest_wins, optimized_wins in zip(
             test["TEAM_ID"],
             y_test,
             ridge_pred,
             forest_pred,
+            optimized_pred,
         ):
             predictions_rows.append({
                 "SEASON": season,
@@ -129,6 +146,7 @@ def compare_models(df):
                 "wins_real": float(actual),
                 "wins_pred_ridge": float(ridge_wins),
                 "wins_pred_random_forest": float(forest_wins),
+                "wins_pred_rf_optimized": float(optimized_wins),
             })
 
     return (
@@ -155,7 +173,9 @@ def main():
     for name, column in [
         ("Ridge", "wins_pred_ridge"),
         ("Random Forest", "wins_pred_random_forest"),
+        ("Random Forest Optimizado", "wins_pred_rf_optimized"),
     ]:
+
         comparison_rows.append({
             "model": name,
             "n": len(predictions),
