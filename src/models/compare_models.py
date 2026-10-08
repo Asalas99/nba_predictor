@@ -34,7 +34,10 @@ from sklearn.metrics import (
 import config
 
 from src.models.m1_wins import assemble, FEATURES, year
-from src.models.m1_random_forest import create_model
+from src.models.m1_random_forest import (
+    create_model,
+    optimize_hyperparameters,
+)
 
 
 def calculate_metrics(y_true, y_pred):
