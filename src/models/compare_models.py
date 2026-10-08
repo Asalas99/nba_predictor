@@ -108,6 +108,8 @@ def compare_models(df):
         # MODELO 3: RANDOM FOREST OPTIMIZADO
         # Solo utiliza temporadas anteriores a la prueba
         best_params = optimize_hyperparameters(train)
+        print(f"\nTemporada: {season}")
+        print(f"Mejores parámetros RF: {best_params}")
 
         optimized_forest = create_model(best_params)
         optimized_forest.fit(X_train, y_train)
